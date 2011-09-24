@@ -1,6 +1,8 @@
 from django import template
 from django.http import Http404
 from django.conf import settings
+from django.db.models.query import QuerySet
+from operator import itemgetter
 
 register = template.Library()
 
@@ -96,7 +98,22 @@ class SortedDataNode(template.Node):
         order_by = context['request'].field
         if len(order_by) > 1:
             try:
-                context[key] = value.order_by(order_by)
+                if isinstance(value, QuerySet):
+                    # more flexible but generally more error-prone check:
+                    #    callable(getattr(value, 'order_by', None))
+                    context[key] = value.order_by(order_by)
+                # sort iterable
+                elif hasattr(value, '__iter__'):
+                    if order_by[0]=='-': # descending order
+                        reverse = True
+                        order_by = order_by[1:]
+                    else: # ascending order (standard)
+                        reverse = False
+                    context[key] =\
+                        sorted(value,key=itemgetter(order_by),reverse=reverse)
+                else:
+                    raise AttributeError("Expected QuerySet or iterable under\
+                                          template variable '%s'." % key)
             except template.TemplateSyntaxError:
                 if INVALID_FIELD_RAISES_404:
                     raise Http404('Invalid field sorting. If DEBUG were set to ' +
